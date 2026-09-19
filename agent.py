@@ -41,7 +41,7 @@ for stream_name in ("stdout", "stderr"):
 import chromadb
 from chromadb.config import Settings
 from dotenv import load_dotenv
-from openai import OpenAI
+import requests
 from sentence_transformers import SentenceTransformer
 
 from config import (
@@ -92,9 +92,10 @@ class Lin43Agent:
             self.collection = client.get_collection(COLLECTION_NAME)
             print(f"✅ 知识库就绪：{self.collection.count()} 块", flush=True)
 
-        # DeepSeek（OpenAI 兼容 SDK）
-        self.llm = OpenAI(api_key=api_key, base_url=DEEPSEEK_BASE_URL)
+        # DeepSeek：直接用 requests（绕过 openai SDK 在 Python 3.14 上的编码 bug）
+        self.api_key = api_key
         self.model = os.getenv("DEEPSEEK_MODEL", "deepseek-chat")
+        self.api_url = f"{DEEPSEEK_BASE_URL}/chat/completions"
 
         # 对话历史（内存中，单轮不需要多轮上下文也能工作）
         self.history: list[dict] = []
@@ -143,25 +144,45 @@ class Lin43Agent:
             {"role": "user", "content": user_msg},
         ]
 
+        headers = {
+            "Authorization": f"Bearer {self.api_key}",
+            "Content-Type": "application/json",
+        }
+        payload = {
+            "model": self.model,
+            "messages": messages,
+            "temperature": 0.3,
+            "stream": stream,
+        }
+
         if stream:
             # 流式模式（REPL 用）
-            stream_resp = self.llm.chat.completions.create(
-                model=self.model, messages=messages, stream=True, temperature=0.3,
-            )
             chunks = []
-            for delta in stream_resp:
-                if delta.choices and delta.choices[0].delta.content:
-                    text = delta.choices[0].delta.content
-                    chunks.append(text)
-                    print(text, end="", flush=True)
+            with requests.post(self.api_url, headers=headers, json=payload, stream=True, timeout=60) as r:
+                r.raise_for_status()
+                for line in r.iter_lines(decode_unicode=True):
+                    if not line or not line.startswith("data: "):
+                        continue
+                    line = line[6:]
+                    if line == "[DONE]":
+                        break
+                    try:
+                        import json as _json
+                        d = _json.loads(line)
+                        text = d["choices"][0]["delta"].get("content", "")
+                        if text:
+                            chunks.append(text)
+                            print(text, end="", flush=True)
+                    except Exception:
+                        continue
             print()
             answer = "".join(chunks)
         else:
-            # 非流式（单次问答用）
-            resp = self.llm.chat.completions.create(
-                model=self.model, messages=messages, stream=False, temperature=0.3,
-            )
-            answer = resp.choices[0].message.content or ""
+            # 非流式（Streamlit 用）
+            resp = requests.post(self.api_url, headers=headers, json=payload, timeout=60)
+            resp.raise_for_status()
+            data = resp.json()
+            answer = data["choices"][0]["message"]["content"] or ""
 
         # 追加到历史
         self.history.append({"role": "user", "content": question})
