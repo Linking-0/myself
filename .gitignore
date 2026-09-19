@@ -1,0 +1,30 @@
+# ===== 敏感 & 运行时 =====
+.env
+chroma_db/
+agent_output.txt
+
+# ===== Python =====
+.venv/
+venv/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache/
+
+# ===== IDE =====
+.vscode/
+.idea/
+
+# ===== OS =====
+.DS_Store
+Thumbs.db
+
+# ===== 模型/缓存 =====
+*.tmp
+*.log
+.hf-cache/
+.cache/huggingface/
+
+# ===== HF Spaces =====
+data/
