@@ -1,0 +1,13 @@
+[server]
+address = "0.0.0.0"
+port = 8501
+headless = true
+
+[browser]
+gatherUsageStats = false
+
+[env]
+# 强制 UTF-8，避免容器里中文编码炸
+PYTHONIOENCODING = "utf-8"
+LANG = "C.UTF-8"
+LC_ALL = "C.UTF-8"

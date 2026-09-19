@@ -8,22 +8,35 @@
 from __future__ import annotations
 
 import io
+import locale
 import os
 import sys
 from pathlib import Path
 
-# UTF-8 兜底：Streamlit Cloud / 某些 Linux 容器默认 locale 不是 UTF-8，
-# print 中文会抛 UnicodeEncodeError
-if sys.stdout.encoding not in ("utf-8", "UTF-8"):
+# ===== 编码炸弹：Streamlit Cloud / 某些 Linux 容器 =====
+# 默认 locale 是 POSIX / C，openai SDK 序列化中文时抛 UnicodeEncodeError
+# 必须在一切第三方 import 之前修掉
+os.environ.setdefault("PYTHONIOENCODING", "utf-8")
+os.environ.setdefault("LANG", "C.UTF-8")
+os.environ.setdefault("LC_ALL", "C.UTF-8")
+try:
+    locale.setlocale(locale.LC_ALL, "C.UTF-8")
+except locale.Error:
     try:
-        sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
-    except Exception:
+        locale.setlocale(locale.LC_ALL, "en_US.UTF-8")
+    except locale.Error:
         pass
-if sys.stderr.encoding not in ("utf-8", "UTF-8"):
-    try:
-        sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding="utf-8", errors="replace")
-    except Exception:
-        pass
+
+# UTF-8 兜底 stdout/stderr
+for stream_name in ("stdout", "stderr"):
+    stream = getattr(sys, stream_name, None)
+    if stream is not None and hasattr(stream, "buffer"):
+        enc = getattr(stream, "encoding", "") or ""
+        if enc.lower() != "utf-8":
+            try:
+                setattr(sys, stream_name, io.TextIOWrapper(stream.buffer, encoding="utf-8", errors="replace"))
+            except Exception:
+                pass
 
 import chromadb
 from chromadb.config import Settings
