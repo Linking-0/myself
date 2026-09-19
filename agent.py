@@ -38,10 +38,13 @@ for stream_name in ("stdout", "stderr"):
             except Exception:
                 pass
 
+import json as _json
+import urllib.request
+import urllib.error
+
 import chromadb
 from chromadb.config import Settings
 from dotenv import load_dotenv
-import requests
 from sentence_transformers import SentenceTransformer
 
 from config import (
@@ -147,6 +150,7 @@ class Lin43Agent:
         headers = {
             "Authorization": f"Bearer {self.api_key}",
             "Content-Type": "application/json",
+            "Accept": "application/json",
         }
         payload = {
             "model": self.model,
@@ -154,20 +158,21 @@ class Lin43Agent:
             "temperature": 0.3,
             "stream": stream,
         }
+        # 显式 UTF-8 encode —— 避开 Python 3.14 / requests / openai SDK 各种编码炸点
+        body = _json.dumps(payload, ensure_ascii=False).encode("utf-8")
+        req = urllib.request.Request(self.api_url, data=body, headers=headers, method="POST")
 
         if stream:
-            # 流式模式（REPL 用）
             chunks = []
-            with requests.post(self.api_url, headers=headers, json=payload, stream=True, timeout=60) as r:
-                r.raise_for_status()
-                for line in r.iter_lines(decode_unicode=True):
+            with urllib.request.urlopen(req, timeout=60) as resp:
+                for line_bytes in resp:
+                    line = line_bytes.decode("utf-8").strip()
                     if not line or not line.startswith("data: "):
                         continue
                     line = line[6:]
                     if line == "[DONE]":
                         break
                     try:
-                        import json as _json
                         d = _json.loads(line)
                         text = d["choices"][0]["delta"].get("content", "")
                         if text:
@@ -178,11 +183,10 @@ class Lin43Agent:
             print()
             answer = "".join(chunks)
         else:
-            # 非流式（Streamlit 用）
-            resp = requests.post(self.api_url, headers=headers, json=payload, timeout=60)
-            resp.raise_for_status()
-            data = resp.json()
-            answer = data["choices"][0]["message"]["content"] or ""
+            with urllib.request.urlopen(req, timeout=60) as resp:
+                raw = resp.read().decode("utf-8")
+                data = _json.loads(raw)
+                answer = data["choices"][0]["message"]["content"] or ""
 
         # 追加到历史
         self.history.append({"role": "user", "content": question})
