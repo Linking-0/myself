@@ -2,7 +2,7 @@
 
 同时支持：
   本地 Windows 开发：完整知识库（project memory + MicroCleaningVision + personal）
-  HuggingFace Spaces：仅 personal.md（没有本地 memory 和项目文件）
+  云端部署（Streamlit Cloud / HF Spaces / Zeabur）：仅 personal.md（没有本地 memory 和项目文件）
 """
 from __future__ import annotations
 
@@ -11,26 +11,29 @@ from pathlib import Path
 
 # ===== 环境检测 =====
 IS_HF_SPACES = os.getenv("SPACE_ID") is not None or Path("/data").exists()
+# Streamlit Community Cloud / 其他 Linux 容器：找不到 Windows 本地路径就是云端
+_MEMORY_ROOT_LOCAL = Path(r"c:\Users\lin43\.trae-cn\memory")
+IS_CLOUD = IS_HF_SPACES or not _MEMORY_ROOT_LOCAL.exists()
 
 # ===== 路径 =====
 APP_DIR = Path(__file__).resolve().parent
 CHROMA_DIR: Path
 SOURCE_FILES: list[tuple[Path, str]]
 
-if IS_HF_SPACES:
-    # --- HuggingFace Spaces ---
-    # 持久化目录 /data（容器重启不丢），代码目录 /app
-    CHROMA_DIR = Path("/data/chroma_db")
-    CHROMA_DIR.parent.mkdir(parents=True, exist_ok=True)
+if IS_CLOUD:
+    # --- 云端（Streamlit Cloud / HF Spaces / Zeabur）---
+    # 云端 Chroma 存在容器临时目录，重启会重建（但 personal.md 里资料不多，重建很快）
+    CHROMA_DIR = APP_DIR / "chroma_db"
+    CHROMA_DIR.mkdir(parents=True, exist_ok=True)
 
-    # HF 上只有 personal.md，没有 Trae memory 和项目文档
+    # 云端只有 repo 里的 personal.md，没有 Trae memory 和项目文档
     SOURCE_FILES = [
         (APP_DIR / "personal.md", "persona"),
     ]
 else:
     # --- 本地 Windows ---
     WORKSPACE = APP_DIR.parent
-    MEMORY_ROOT = Path(r"c:\Users\lin43\.trae-cn\memory")
+    MEMORY_ROOT = _MEMORY_ROOT_LOCAL
     CHROMA_DIR = APP_DIR / "chroma_db"
 
     # 完整知识库
