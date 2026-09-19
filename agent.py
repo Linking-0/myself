@@ -38,9 +38,8 @@ for stream_name in ("stdout", "stderr"):
             except Exception:
                 pass
 
+import http.client as _http
 import json as _json
-import urllib.request
-import urllib.error
 
 import chromadb
 from chromadb.config import Settings
@@ -158,35 +157,46 @@ class Lin43Agent:
             "temperature": 0.3,
             "stream": stream,
         }
-        # 显式 UTF-8 encode —— 避开 Python 3.14 / requests / openai SDK 各种编码炸点
-        body = _json.dumps(payload, ensure_ascii=False).encode("utf-8")
-        req = urllib.request.Request(self.api_url, data=body, headers=headers, method="POST")
+        body_bytes = _json.dumps(payload, ensure_ascii=False).encode("utf-8")
+
+        # 解析 URL 为 host + path
+        from urllib.parse import urlparse
+        parsed = urlparse(self.api_url)
+        host = parsed.hostname
+        port = parsed.port or 443
+        path = parsed.path or "/"
 
         if stream:
             chunks = []
-            with urllib.request.urlopen(req, timeout=60) as resp:
-                for line_bytes in resp:
-                    line = line_bytes.decode("utf-8").strip()
-                    if not line or not line.startswith("data: "):
-                        continue
-                    line = line[6:]
-                    if line == "[DONE]":
-                        break
-                    try:
-                        d = _json.loads(line)
-                        text = d["choices"][0]["delta"].get("content", "")
-                        if text:
-                            chunks.append(text)
-                            print(text, end="", flush=True)
-                    except Exception:
-                        continue
+            conn = _http.HTTPSConnection(host, port, timeout=60)
+            conn.request("POST", path, body=body_bytes, headers=headers)
+            resp = conn.getresponse()
+            for line_bytes in resp:
+                line = line_bytes.decode("utf-8").strip()
+                if not line or not line.startswith("data: "):
+                    continue
+                line = line[6:]
+                if line == "[DONE]":
+                    break
+                try:
+                    d = _json.loads(line)
+                    text = d["choices"][0]["delta"].get("content", "")
+                    if text:
+                        chunks.append(text)
+                        print(text, end="", flush=True)
+                except Exception:
+                    continue
             print()
+            conn.close()
             answer = "".join(chunks)
         else:
-            with urllib.request.urlopen(req, timeout=60) as resp:
-                raw = resp.read().decode("utf-8")
-                data = _json.loads(raw)
-                answer = data["choices"][0]["message"]["content"] or ""
+            conn = _http.HTTPSConnection(host, port, timeout=60)
+            conn.request("POST", path, body=body_bytes, headers=headers)
+            resp = conn.getresponse()
+            raw = resp.read().decode("utf-8")
+            conn.close()
+            data = _json.loads(raw)
+            answer = data["choices"][0]["message"]["content"] or ""
 
         # 追加到历史
         self.history.append({"role": "user", "content": question})
