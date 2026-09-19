@@ -196,6 +196,12 @@ class Lin43Agent:
             raw = resp.read().decode("utf-8")
             conn.close()
             data = _json.loads(raw)
+            # 处理错误响应（余额不足、模型名错等）
+            if "error" in data:
+                err_msg = data["error"].get("message", str(data["error"]))
+                raise RuntimeError(f"DeepSeek API 错误 (HTTP {resp.status}): {err_msg}")
+            if "choices" not in data:
+                raise RuntimeError(f"DeepSeek API 返回意外格式 (HTTP {resp.status}): {raw[:500]}")
             answer = data["choices"][0]["message"]["content"] or ""
 
         # 追加到历史
