@@ -7,9 +7,23 @@
 """
 from __future__ import annotations
 
+import io
 import os
 import sys
 from pathlib import Path
+
+# UTF-8 兜底：Streamlit Cloud / 某些 Linux 容器默认 locale 不是 UTF-8，
+# print 中文会抛 UnicodeEncodeError
+if sys.stdout.encoding not in ("utf-8", "UTF-8"):
+    try:
+        sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
+    except Exception:
+        pass
+if sys.stderr.encoding not in ("utf-8", "UTF-8"):
+    try:
+        sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding="utf-8", errors="replace")
+    except Exception:
+        pass
 
 import chromadb
 from chromadb.config import Settings
